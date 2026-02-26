@@ -7,10 +7,6 @@
 #include "TempSensor_MCP9808/MCP9808.cpp"
 #include "FlowSensor_SLFS4000B/SLFS4000B.h"
 #include "FlowSensor_SLFS4000B/SLFS4000B.cpp"
-#include "ExternalTempSensor_MCP9984T/MCP9984T.h"
-#include "ExternalTempSensor_MCP9984T/MCP9984T.cpp"
-#include "NovaPressureSensor/NOVA.h"
-#include "NovaPressureSensor/NOVA.cpp"
 #include "DAC/DAC.h"
 #include "DAC/DAC.cpp"
 
@@ -23,14 +19,12 @@
 bool PRINT_DATA = true;
 bool PLOT_MODE  = false;
 
-const uint32_t I2C_FREQ = 200000;
+const uint32_t I2C_FREQ = 50000;
 
 // I2C addresses
-#define MCP9808_A_ADDR        0x19
+#define MCP9808_A_ADDR        0x18
 #define MCP9808_B_ADDR        0x1D
 #define SLF3S4000B_ADDR       0x08
-#define MCP9984T_ADDR         0x4C
-#define PRESSURE_SENSOR_ADDR  0x28
 
 // DAC
 #define DAC_ADDR 0x0F
@@ -43,17 +37,12 @@ static const uint8_t DAC_DEFAULT_CH = 0;
 MCP9808     mcpA(MCP9808_A_ADDR);
 MCP9808     mcpB(MCP9808_B_ADDR);
 SLF3S4000B  flowSensor(SLF3S4000B_ADDR);
-MCP9984T    mcp9984t(MCP9984T_ADDR);
-uint16_t    mcp9984t_id = 0;
-NOVA_PRESSURE pressureSensor(PRESSURE_SENSOR_ADDR);
 DAC         dac(DAC_ADDR);
 
 // ------------ Live flags (only print if true) ------------
 bool LIVE_MCP_A = false;
 bool LIVE_MCP_B = false;
 bool LIVE_FLOW  = false;
-bool LIVE_BJT   = false;
-bool LIVE_PRESS = false; // not used in loop currently
 bool LIVE_DAC   = false;
 
 // ------------ Serial input handling ------------
@@ -107,27 +96,25 @@ void setup() {
     Serial.println("SLF3S-4000B startup FAILED");
   }
 
-  // --- MCP9984T external BJT temp sensor ---
-  LIVE_BJT =
-    (mcp9984t.begin(mcp9984t_id) &&
-     mcp9984t.setAlertThermMode(true) &&
-     mcp9984t.setAlertLimitsAllBJTs(70.0f) &&
-     mcp9984t.setThermHysteresis(5.0f));
-
-  if (LIVE_BJT) {
-    Serial.print("MCP9984T started, ID: 0x");
-    Serial.println(mcp9984t_id, HEX);
-  } else {
-    Serial.println("MCP9984T: startup failed!");
-  }
-
   Serial.println("Setup complete.");
+  delay(1000);
   printHelp();
 }
 
 // ------------ Loop ------------
 
 void loop() {
+  // Run all I2C commands once
+  static bool ranOnce = false;
+  if (ranOnce) {
+    // Stop forever after the first pass
+    Serial.println("Loop already ran once. Halting.");
+    while (true) {
+      delay(1000);
+    }
+  }
+  ranOnce = true;
+
   static uint8_t slf_fail_count = 0;
 
   float tA = NAN, tB = NAN;
@@ -137,7 +124,6 @@ void loop() {
   float flow_filtered = NAN, flow_av = NAN;
   uint16_t flowFlags = 0;
 
-  float tBJTs[3] = {NAN, NAN, NAN};
 
   // --------- Serial input: line-based ----------
   while (Serial.available() > 0) {
@@ -204,13 +190,6 @@ void loop() {
     }
   }
 
-  bool okBJT1=false, okBJT2=false, okBJT3=false;
-  if (LIVE_BJT) {
-    okBJT1 = mcp9984t.readExternalTemp(1, tBJTs[0]);
-    okBJT2 = mcp9984t.readExternalTemp(2, tBJTs[1]);
-    okBJT3 = mcp9984t.readExternalTemp(3, tBJTs[2]);
-  }
-
   // ---------- OUTPUT BLOCK ----------
   if (!PLOT_MODE) {
     if (PRINT_DATA) {
@@ -254,18 +233,6 @@ void loop() {
         printedAnything = true;
       }
 
-      if (LIVE_BJT) {
-        Serial.print("BJT: ");
-        if (okBJT1) { Serial.print("1="); Serial.print(tBJTs[0], 3); Serial.print(" "); }
-        else        { Serial.print("1=fail "); }
-        if (okBJT2) { Serial.print("2="); Serial.print(tBJTs[1], 3); Serial.print(" "); }
-        else        { Serial.print("2=fail "); }
-        if (okBJT3) { Serial.print("3="); Serial.print(tBJTs[2], 3); }
-        else        { Serial.print("3=fail"); }
-        Serial.print("   ");
-        printedAnything = true;
-      }
-
       if (printedAnything) Serial.println();
     }
   } else {
@@ -287,14 +254,6 @@ void loop() {
       if (!first) Serial.print(" ");
       Serial.print("Flow:");  Serial.print(okFlow ? flow : 0.0f, 4);
       Serial.print(" FlowT:");Serial.print(okFlow ? flowT : 0.0f, 4);
-      first = false;
-    }
-
-    if (LIVE_BJT) {
-      if (!first) Serial.print(" ");
-      Serial.print("BJT1:"); Serial.print(okBJT1 ? tBJTs[0] : 0.0f, 4);
-      Serial.print(" BJT2:");Serial.print(okBJT2 ? tBJTs[1] : 0.0f, 4);
-      Serial.print(" BJT3:");Serial.print(okBJT3 ? tBJTs[2] : 0.0f, 4);
       first = false;
     }
 
