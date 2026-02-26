@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <math.h>
 
 #include "PID/PID.h"
 #include "PID/PID.cpp"
@@ -22,9 +23,9 @@ const uint32_t I2C_FREQ = 200000;
 
 // DAC
 #define DAC_ADDR 0x0F
-static const float   VREF = 3.28f;   // DAC reference voltage (and your PID output limit)
-static const uint8_t DAC_RES_BITS   = 16;
-static const uint8_t DAC_DEFAULT_CH = 0;
+static const float   VREF            = 3.28f;   // DAC reference voltage (and your PID output limit)
+static const uint8_t DAC_RES_BITS    = 16;
+static const uint8_t DAC_DEFAULT_CH  = 0;
 
 // -------------------- Devices --------------------
 
@@ -33,8 +34,8 @@ DAC        dac(DAC_ADDR);
 
 // -------------------- PID Config --------------------
 
-float kp = 0.1f;
-float ki = 0.2f;
+float kp = 0.005f;
+float ki = 0.0f;
 float kd = 0.0f;
 float d_tau = 0.05f;
 
@@ -56,6 +57,19 @@ bool LIVE_FLOW = false;
 bool LIVE_DAC  = false;
 
 static uint8_t slf_fail_count = 0;
+
+// -------------------- 16-bit DAC helpers --------------------
+
+static inline uint16_t voltsToDacCode(float v) {
+  if (v <= 0.0f) return 0;
+  if (v >= VREF) return 65535;
+  // Round-to-nearest code
+  return (uint16_t)lroundf((v / VREF) * 65535.0f);
+}
+
+static inline float dacCodeToVolts(uint16_t code) {
+  return ((float)code * VREF) / 65535.0f;
+}
 
 // -------------------- Serial Handling --------------------
 // Keep your existing PID tuning format:
@@ -163,11 +177,14 @@ void loop() {
 
   // ---- Read real flow sensor ----
   float flow = NAN, flowT = NAN;
+  float flow_filtered = NAN, flow_av = NAN;
   uint16_t flowFlags = 0;
 
-  bool okFlow = false;
+  bool okFlow=false, okFlow_filt=false, okFlow_av=false;
   if (LIVE_FLOW) {
-    okFlow = flowSensor.read(flow, flowT, flowFlags);
+    okFlow      = flowSensor.read(flow, flowT, flowFlags);
+    okFlow_filt = flowSensor.getFilteredFlow(flow_filtered);
+    okFlow_av   = flowSensor.getAverageFlow(flow_av);
 
     if (!okFlow) {
       slf_fail_count++;
@@ -181,35 +198,43 @@ void loop() {
   }
 
   // Use sensor as measurement (ml/min)
-  float flow_meas = okFlow ? flow : 0.0f;
+  float flow_meas = flow_av;
 
   // ---- PID update ----
   // PID returns vcmd in volts [0..VREF]
   auto [vcmd, _] = flowPid.update(targetFlow, flow_meas);
 
-  // Deadband + clamp
-  float vEff = (vcmd < vDead) ? 0.0f : vcmd;
-  if (vEff < 0.0f) vEff = 0.0f;
-  if (vEff > VREF) vEff = VREF;
+
+  if (targetFlow <= 0.0f) {
+    vcmd = 0.0f;
+  }
+
+  // ---- 16-bit code (for printing true DAC resolution) ----
+  uint16_t dacCode = voltsToDacCode(vcmd);
+  float    vQuant  = dacCodeToVolts(dacCode); // voltage representable by that exact code
 
   // ---- Apply to DAC ----
   if (LIVE_DAC) {
-    bool ok = dac.setVoltage(vEff);
+    bool ok = dac.setVoltage(vcmd);
     if (!ok) {
       Serial.println("DAC setVoltage() failed (I2C?)");
     }
   }
 
-  // ---- Print (kept similar to your current loop) ----
+  // ---- Print ----
   Serial.print("target:"); Serial.print(targetFlow, 3); Serial.print(" ");
   Serial.print("meas:");   Serial.print(flow_meas, 3);  Serial.print(" ");
-  Serial.print("vcmd:");   Serial.print(vcmd, 4);       Serial.print(" ");
-  Serial.print("vEff:");   Serial.print(vEff, 4);
+
+  // show volts with higher precision (float is ~6-7 sig figs on ESP32)
+  Serial.print("vcmdV:");  Serial.print(vcmd, 6);       Serial.print(" ");
+
+  // show exact DAC code + quantized voltage (true 16-bit info)
+  // Serial.print("dac:");    Serial.print(dacCode);
+  // Serial.print(" (0x");    Serial.print(dacCode, HEX);  Serial.print(") ");
+  // Serial.print("dacV:");   Serial.print(vQuant, 6);
 
   if (okFlow) {
     Serial.print(" flowT:"); Serial.print(flowT, 3);
-    Serial.print(" flags:");
-    SLF3S4000B::printFlags(Serial, flowFlags);
   } else {
     Serial.print(" (flow read fail)");
   }
