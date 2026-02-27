@@ -19,7 +19,7 @@
 bool PRINT_DATA = true;
 bool PLOT_MODE  = false;
 
-const uint32_t I2C_FREQ = 50000;
+const uint32_t I2C_FREQ = 400000;
 
 // I2C addresses
 #define MCP9808_A_ADDR        0x18
@@ -65,27 +65,27 @@ void setup() {
   Wire.setClock(I2C_FREQ);
 
   // --- DAC ---
-  dac.begin(DAC_VREF_VOLTS, DAC_RES_BITS, DAC_DEFAULT_CH);
-  LIVE_DAC = true;                // if you want true detection, we can add an I2C ping
-  dac.setVoltage(0.0f);
+  // dac.begin(DAC_VREF_VOLTS, DAC_RES_BITS, DAC_DEFAULT_CH);
+  // LIVE_DAC = true;                // if you want true detection, we can add an I2C ping
+  // dac.setVoltage(0.0f);
 
   // --- MCP9808 A ---
-  LIVE_MCP_A = mcpA.begin(0x03);
-  if (LIVE_MCP_A) {
-    Serial.println("MCP9808 'A' started");
-    mcpA.setLimits(0.0f, 60.0f, 80.0f);
-  } else {
-    Serial.println("MCP9808 'A' startup FAILED");
-  }
+  // LIVE_MCP_A = mcpA.begin(0x03);
+  // if (LIVE_MCP_A) {
+  //   Serial.println("MCP9808 'A' started");
+  //   mcpA.setLimits(0.0f, 60.0f, 80.0f);
+  // } else {
+  //   Serial.println("MCP9808 'A' startup FAILED");
+  // }
 
-  // --- MCP9808 B ---
-  LIVE_MCP_B = mcpB.begin(0x03);
-  if (LIVE_MCP_B) {
-    Serial.println("MCP9808 'B' started");
-    mcpB.setLimits(0.0f, 60.0f, 80.0f);
-  } else {
-    Serial.println("MCP9808 'B' startup FAILED");
-  }
+  // // --- MCP9808 B ---
+  // LIVE_MCP_B = mcpB.begin(0x03);
+  // if (LIVE_MCP_B) {
+  //   Serial.println("MCP9808 'B' started");
+  //   mcpB.setLimits(0.0f, 60.0f, 80.0f);
+  // } else {
+  //   Serial.println("MCP9808 'B' startup FAILED");
+  // }
 
   // --- SLF3S-4000B flow sensor ---
   LIVE_FLOW = flowSensor.startWater();
@@ -98,7 +98,7 @@ void setup() {
 
   Serial.println("Setup complete.");
   delay(1000);
-  printHelp();
+  //printHelp();
 }
 
 // ------------ Loop ------------
@@ -120,44 +120,44 @@ void loop() {
   float tA = NAN, tB = NAN;
   float tA_filtered = NAN, tA_av = NAN;
 
-  float flow = NAN, flowT = NAN;
+  float flow = NAN, flowT = NAN, byte1 = NAN, byte2 = NAN, CRC = NAN;
   float flow_filtered = NAN, flow_av = NAN;
   uint16_t flowFlags = 0;
 
 
   // --------- Serial input: line-based ----------
-  while (Serial.available() > 0) {
-    char c = (char)Serial.read();
-    if (c == '\r') continue;
+  // while (Serial.available() > 0) {
+  //   char c = (char)Serial.read();
+  //   if (c == '\r') continue;
 
-    if (c == '\n') {
-      String line = inputLine;
-      inputLine = "";
-      line.trim();
+  //   if (c == '\n') {
+  //     String line = inputLine;
+  //     inputLine = "";
+  //     line.trim();
 
-      if (line.length() == 0) {
-        PLOT_MODE = !PLOT_MODE;
-        Serial.print("Mode: ");
-        Serial.println(PLOT_MODE ? "PLOT" : "TEXT");
-      } else {
-        float v = line.toFloat();
-        if (LIVE_DAC) {
-          bool ok = dac.setVoltage(v);
-          if (!ok) Serial.println("DAC setVoltage() failed (I2C?)");
-          else {
-            Serial.print("DAC set to ");
-            Serial.print(v, 4);
-            Serial.println(" V");
-          }
-        } else {
-          Serial.println("DAC not marked LIVE");
-        }
-      }
-    } else {
-      inputLine += c;
-      if (inputLine.length() > 40) inputLine.remove(0, inputLine.length() - 40);
-    }
-  }
+  //     if (line.length() == 0) {
+  //       PLOT_MODE = !PLOT_MODE;
+  //       Serial.print("Mode: ");
+  //       Serial.println(PLOT_MODE ? "PLOT" : "TEXT");
+  //     } else {
+  //       float v = line.toFloat();
+  //       if (LIVE_DAC) {
+  //         bool ok = dac.setVoltage(v);
+  //         if (!ok) Serial.println("DAC setVoltage() failed (I2C?)");
+  //         else {
+  //           Serial.print("DAC set to ");
+  //           Serial.print(v, 4);
+  //           Serial.println(" V");
+  //         }
+  //       } else {
+  //         Serial.println("DAC not marked LIVE");
+  //       }
+  //     }
+  //   } else {
+  //     inputLine += c;
+  //     if (inputLine.length() > 40) inputLine.remove(0, inputLine.length() - 40);
+  //   }
+  // }
 
   // ----- Reads (only if live) -----
   bool okA=false, okA_filt=false, okA_av=false;
@@ -174,7 +174,7 @@ void loop() {
 
   bool okFlow=false, okFlow_filt=false, okFlow_av=false;
   if (LIVE_FLOW) {
-    okFlow      = flowSensor.read(flow, flowT, flowFlags);
+    okFlow      = flowSensor.read(flow, flowT, flowFlags, byte1, byte2, CRC);
     okFlow_filt = flowSensor.getFilteredFlow(flow_filtered);
     okFlow_av   = flowSensor.getAverageFlow(flow_av);
 
@@ -226,6 +226,7 @@ void loop() {
           Serial.print(flowT, 4);
           Serial.print(" Flags:");
           SLF3S4000B::printFlags(Serial, flowFlags);
+          Serial.print("  B1: "); Serial.print(byte1, HEX); Serial.print("  B2: "); Serial.print(byte2, HEX); Serial.print("  CRC: "); Serial.print(CRC, HEX);
         } else {
           Serial.print("read fail");
         }

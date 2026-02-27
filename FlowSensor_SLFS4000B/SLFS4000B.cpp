@@ -42,27 +42,31 @@ bool SLF3S4000B::stop() {
   return true;
 }
 
-bool SLF3S4000B::read(float &flow_ml_min, float &temp_C, uint16_t &flags) {
+bool SLF3S4000B::read(float &flow_ml_min, float &temp_C, uint16_t &flags, float &byte1, float &byte2, float &CRC) {
   const uint8_t NumberBytes = 9;
   uint8_t buf[NumberBytes];
 
   readMultiByteRegN(buf, NumberBytes);
 
-  if (crc8(&buf[0], 2) != buf[2]) return false;
-  if (crc8(&buf[3], 2) != buf[5]) return false;
-  if (crc8(&buf[6], 2) != buf[8]) return false;
+  // if (crc8(&buf[0], 2) != buf[2]) return false;
+  // if (crc8(&buf[3], 2) != buf[5]) return false;
+  // if (crc8(&buf[6], 2) != buf[8]) return false;
 
-  if(!decodeData(buf, flow_ml_min, temp_C, flags)) return false;
+  if(!decodeData(buf, flow_ml_min, temp_C, flags, byte1, byte2, CRC)) return false;
 
   return true;
 }
 
-bool SLF3S4000B::decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags) 
+bool SLF3S4000B::decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags, float &byte1, float &byte2, float &CRC) 
 {
     // Extract signed 16-bit values from big-endian format
     int16_t raw_flow = (int16_t)((buf[0] << 8) | buf[1]);
     int16_t raw_temp = (int16_t)((buf[3] << 8) | buf[4]);
     flags            = (uint16_t)((buf[6] << 8) | buf[7]);
+
+    byte1 = buf[0];
+    byte2 = buf[1];
+    CRC = buf[2];
 
     // Sensirion SLF3S-4000B scaling
     flow_ml_min = raw_flow / 32.0f;

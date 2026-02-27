@@ -11,8 +11,8 @@ public:
   bool startWater();           // start continuous measurement (H2O)
   bool stop();                 // stop continuous measurement
 
-  bool read(float &flow_ml_min, float &temp_C, uint16_t &flags);
-  bool decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags) ;
+  bool read(float &flow_ml_min, float &temp_C, uint16_t &flags, float &byte1, float &byte2, float &CRC);
+  bool decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags, float &byte1, float &byte2, float &CRC) ;
 
   bool getFilteredFlow(float &out);
   bool getAverageFlow(float &out);
