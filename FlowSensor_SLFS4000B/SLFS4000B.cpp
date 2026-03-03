@@ -172,7 +172,7 @@ bool SLF3S4000B::getCorrectedFlowRate_lpm(float &out) {
   return true;
 }
 
-// Convert filtered flow (mL/min) -> L/min
+// Convert filtered flow mL/min -> L/min
 bool SLF3S4000B::getFilteredFlow_lpm(float &out) {
   float flow_ml_min;
 

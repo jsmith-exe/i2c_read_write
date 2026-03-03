@@ -16,7 +16,7 @@
 #define SDA_PIN 3
 #define SCL_PIN 2
 
-const uint32_t I2C_FREQ = 200000;
+const uint32_t I2C_FREQ = 400000;
 
 // SLF3S-4000B
 #define SLF3S4000B_ADDR 0x08
@@ -45,9 +45,6 @@ PID flowPid(kp, ki, kd, -1.0f, 0.0f, VREF, d_tau);
 // Setpoint in ml/min
 float targetFlow = 400.0f;
 
-// Deadband for pump drive (volts). Anything below -> 0V output.
-float vDead = 0.25f;
-
 // -------------------- Runtime --------------------
 
 unsigned long lastMicros_;
@@ -56,7 +53,6 @@ String inputLine;
 bool LIVE_FLOW = false;
 bool LIVE_DAC  = false;
 
-static uint8_t slf_fail_count = 0;
 
 // -------------------- 16-bit DAC helpers --------------------
 
@@ -144,17 +140,22 @@ void setup() {
   Wire.setClock(I2C_FREQ);
 
   // DAC init
-  dac.begin(VREF, DAC_RES_BITS, DAC_DEFAULT_CH);
-  LIVE_DAC = true; // if you want, we can add an I2C ping to confirm
+  LIVE_DAC = dac.begin(VREF, DAC_RES_BITS, DAC_DEFAULT_CH, true);
   dac.setVoltage(0.0f);
+
+  if (LIVE_DAC) {
+    Serial.println("DAC Address Ack");
+  } else {
+    Serial.println("DAC Address Failed");
+  }  
 
   // Flow sensor init
   LIVE_FLOW = flowSensor.startWater();
+
   if (LIVE_FLOW) {
-    Serial.println("SLF3S-4000B started (water mode)");
-    delay(50);
+    Serial.println("Flow Address Ack");
   } else {
-    Serial.println("SLF3S-4000B startup FAILED");
+    Serial.println("Flow Address Failed");
   }
 
   flowPid.reset();
@@ -175,30 +176,13 @@ void loop() {
   lastMicros_ = micros();
   if (dt <= 0.0f) dt = 1e-3f;
 
-  // ---- Read real flow sensor ----
-  float flow = NAN, flowT = NAN;
-  float flow_filtered = NAN, flow_av = NAN;
-  uint16_t flowFlags = 0;
+  float corrected_flow_mlpm = 0.0f;
 
-  bool okFlow=false, okFlow_filt=false, okFlow_av=false;
-  if (LIVE_FLOW) {
-    okFlow      = flowSensor.read(flow, flowT, flowFlags);
-    okFlow_filt = flowSensor.getFilteredFlow(flow_filtered);
-    okFlow_av   = flowSensor.getAverageFlow(flow_av);
 
-    if (!okFlow) {
-      slf_fail_count++;
-      if (slf_fail_count >= 3) {
-        flowSensor.resetSensor();
-        slf_fail_count = 0;
-      }
-    } else {
-      slf_fail_count = 0;
-    }
-  }
+  flowSensor.getCorrectedFlowRate_mlpm(corrected_flow_mlpm);
 
-  // Use sensor as measurement (ml/min)
-  float flow_meas = flow_av;
+
+  float flow_meas = corrected_flow_mlpm;
 
   // ---- PID update ----
   // PID returns vcmd in volts [0..VREF]
@@ -232,12 +216,6 @@ void loop() {
   // Serial.print("dac:");    Serial.print(dacCode);
   // Serial.print(" (0x");    Serial.print(dacCode, HEX);  Serial.print(") ");
   // Serial.print("dacV:");   Serial.print(vQuant, 6);
-
-  if (okFlow) {
-    Serial.print(" flowT:"); Serial.print(flowT, 3);
-  } else {
-    Serial.print(" (flow read fail)");
-  }
 
   Serial.println();
 
