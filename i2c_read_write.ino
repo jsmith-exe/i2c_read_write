@@ -177,9 +177,13 @@ void loop() {
   if (dt <= 0.0f) dt = 1e-3f;
 
   float corrected_flow_mlpm = 0.0f;
+  float raw_flow = 0.0f;
+  float temp = 0.0f;
+  uint16_t flag = 0;
 
 
   flowSensor.getCorrectedFlowRate_mlpm(corrected_flow_mlpm);
+  flowSensor.read(raw_flow, temp, flag);
 
 
   float flow_meas = corrected_flow_mlpm;
