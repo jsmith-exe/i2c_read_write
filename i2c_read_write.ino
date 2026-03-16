@@ -2,8 +2,8 @@
 #include <Wire.h>
 #include <math.h>
 
-#include "PID/PID.h"
-#include "PID/PID.cpp"
+#include "PIDVelocity/PIDVelocity.h"
+#include "PIDVelocity/PIDVelocity.cpp"
 #include "I2CDevices.h"
 #include "FlowSensor_SLFS4000B/SLFS4000B.h"
 #include "FlowSensor_SLFS4000B/SLFS4000B.cpp"
@@ -23,22 +23,20 @@ const uint32_t I2C_FREQ = 400000;
 const uint32_t PWM_FREQ = 20000;     // 20 kHz
 const uint8_t  PWM_RES_BITS = 8;     // 8-bit => duty 0..255
 
-// Reference used by PID output scaling
-static const float VREF = 3.28f;
-
 // -------------------- Devices --------------------
 
 SLF3S4000B flowSensor(SLF3S4000B_ADDR);
 
 // -------------------- PID Config --------------------
 
+// These gains now tune an incremental / velocity PID
 float kp = 0.005f;
 float ki = 0.0f;
 float kd = 0.0f;
 float d_tau = 0.05f;
 
-// PID output still treated as "virtual voltage" from 0 to VREF
-PID flowPid(kp, ki, kd, -1.0f, 0.0f, VREF, d_tau);
+// Controller tracks absolute PWM output state internally, clamped 0..100%
+PIDVelocity flowPid(kp, ki, kd, -1.0f, 0.0f, 100.0f, d_tau);
 
 // Setpoint in ml/min
 float targetFlow = 400.0f;
@@ -63,12 +61,6 @@ bool MANUAL_PWM_MODE = false;
 float manualPwmPercent = 0.0f;
 
 // -------------------- PWM Helpers --------------------
-
-static inline float voltsToDutyPercent(float v) {
-  if (v <= 0.0f) return 0.0f;
-  if (v >= VREF) return 100.0f;
-  return (v / VREF) * 100.0f;
-}
 
 void setPWMDutyPercent(float percent)
 {
@@ -101,7 +93,6 @@ void handleLine(const String& lineIn) {
   if (line.length() == 0) return;
 
   // ---------- manual PWM command ----------
-  // Example: pwm 35
   if (line.startsWith("pwm ") || line.startsWith("PWM ")) {
     String valueStr = line.substring(4);
     valueStr.trim();
@@ -121,6 +112,9 @@ void handleLine(const String& lineIn) {
       MANUAL_PWM_MODE = true;
       manualPwmPercent = pwm;
 
+      // Keep controller aligned with manual command for smooth handover later
+      flowPid.setOutputState(manualPwmPercent);
+
       if (LIVE_PWM) {
         setPWMDutyPercent(manualPwmPercent);
       }
@@ -137,8 +131,14 @@ void handleLine(const String& lineIn) {
   // ---------- back to auto PID mode ----------
   if (line.equalsIgnoreCase("auto")) {
     MANUAL_PWM_MODE = false;
+
+    // Bumpless transfer: reset dynamics, then seed output state
     flowPid.reset();
-    Serial.println("Returned to AUTO PID mode");
+    flowPid.setOutputState(manualPwmPercent);
+
+    Serial.print("Returned to AUTO PID mode from ");
+    Serial.print(manualPwmPercent, 2);
+    Serial.println("% PWM");
     return;
   }
 
@@ -158,7 +158,6 @@ void handleLine(const String& lineIn) {
     if (n == 4) {
       flowPid.setDerivativeFilterTau(d_tau);
     }
-    flowPid.reset();
 
     Serial.print("Updated PID: kp="); Serial.print(kp);
     Serial.print(" ki="); Serial.print(ki);
@@ -240,6 +239,7 @@ void setup() {
   }
 
   flowPid.reset();
+  flowPid.setOutputState(0.0f);
   lastMicros_ = micros();
 
   Serial.println();
@@ -271,20 +271,24 @@ void loop() {
 
   float flow_meas = corrected_flow_mlpm;
 
-  // ---- PID update ----
-  auto pidOut = flowPid.update(targetFlow, flow_meas);
-  float vcmd = pidOut.first;
+  float deltaPwm = 0.0f;
+  float pwmPercent = 0.0f;
 
-  if (targetFlow <= 0.0f) {
-    vcmd = 0.0f;
-  }
-
-  // Convert voltage command to PWM percentage
-  float pwmPercent = voltsToDutyPercent(vcmd);
-
-  // Manual override
   if (MANUAL_PWM_MODE) {
     pwmPercent = manualPwmPercent;
+
+    // Keep controller state aligned during manual mode
+    flowPid.setOutputState(manualPwmPercent);
+  } else {
+    if (targetFlow <= 0.0f) {
+      flowPid.setOutputState(0.0f);
+      pwmPercent = 0.0f;
+      deltaPwm = 0.0f;
+    } else {
+      auto pidOut = flowPid.update(targetFlow, flow_meas);
+      deltaPwm = pidOut.first;
+      pwmPercent = flowPid.getOutputState();
+    }
   }
 
   // Apply PWM
@@ -295,7 +299,7 @@ void loop() {
   // ---- Print ----
   Serial.print("target:");      Serial.print(targetFlow, 3);      Serial.print(" ");
   Serial.print("meas:");        Serial.print(flow_meas, 3);       Serial.print(" ");
-  Serial.print("vcmdV:");       Serial.print(vcmd, 6);            Serial.print(" ");
+  Serial.print("dPwm:");        Serial.print(deltaPwm, 6);        Serial.print(" ");
   Serial.print("pwmPercent:");  Serial.print(pwmPercent, 2);      Serial.print(" ");
   Serial.print("mode:");
 
