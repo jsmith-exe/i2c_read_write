@@ -30,8 +30,8 @@ SLF3S4000B flowSensor(SLF3S4000B_ADDR);
 // -------------------- PID Config --------------------
 
 // These gains now tune an incremental / velocity PID
-float kp = 0.005f;
-float ki = 0.0f;
+float kp = 0.075f;
+float ki = 0.05f;
 float kd = 0.0f;
 float d_tau = 0.05f;
 
