@@ -1,68 +1,82 @@
 #include <Arduino.h>
-#include <Wire.h>
+// ESP32-S3 PWM example
+// Arduino IDE
 
-#include "I2CDevices.h"
+const int pwmPin = 18;             // Change if needed
+const uint32_t pwmFreq = 20000;   // 20 kHz
+const uint8_t pwmResolution = 8;  // 8-bit => 0..255
 
-#include "FlowSensor_SLFS4000B/SLFS4000B.h"
-#include "FlowSensor_SLFS4000B/SLFS4000B.cpp"
+uint32_t maxDuty = 0;
+String inputBuffer = "";
 
-// ------------ Config ------------
+void setPWMDutyPercent(float percent)
+{
+  percent = constrain(percent, 0.0, 100.0);
 
-// ESP32 I2C pins
-#define SDA_PIN 3
-#define SCL_PIN 2
+  uint32_t duty = (uint32_t)((percent / 100.0) * maxDuty);
 
-const uint32_t I2C_FREQ = 400000;
-
-// I2C addresses
-#define SLF3S4000B_ADDR 0x08
-
-bool ack;
-
-SLF3S4000B flowSensor(SLF3S4000B_ADDR);
-
-// ------------ Setup ------------
-
-void setup() {
-  Serial.begin(115200);
-  delay(2000);
-
-  Wire.begin(SDA_PIN, SCL_PIN);
-  Wire.setClock(I2C_FREQ);
-
-  // --- SLF3S-4000B flow sensor ---
-  ack = flowSensor.startWater();
-  if (ack) {
-    Serial.println("Address Ack");
-  } else {
-    Serial.println("Address Failed");
+  if (!ledcWrite(pwmPin, duty)) {
+    Serial.println("Failed to update PWM duty");
+    return;
   }
 
-  Serial.println("Press ENTER to take a measurement");
+  Serial.print("Duty cycle set to: ");
+  Serial.print(percent, 1);
+  Serial.print("%  (duty=");
+  Serial.print(duty);
+  Serial.println(")");
 }
 
-// ------------ Loop ------------
+void setup()
+{
+  Serial.begin(115200);
+  delay(500);
 
-void loop() {
+  maxDuty = (1UL << pwmResolution) - 1;
 
-  // Wait for user to press ENTER
-  if (Serial.available()) {
-
-    // Clear the buffer
-    while (Serial.available()) Serial.read();
-
-    float flow = NAN, flowT = NAN, byte1 = NAN, byte2 = NAN, CRC = NAN;
-    uint16_t flowFlags = 0;
-
-    flowSensor.read(flow, flowT, flowFlags, byte1, byte2, CRC);
-
-    Serial.print("Flow: "); Serial.print(flow, 4);
-    Serial.print("  B1: "); Serial.print(byte1, HEX);
-    Serial.print("  B2: "); Serial.print(byte2, HEX);
-    Serial.print("  CRC: "); Serial.print(CRC, HEX);
-    Serial.println();
-
-    Serial.println("Press ENTER to run again");
+  // New ESP32 Arduino core 3.x style
+  if (!ledcAttach(pwmPin, pwmFreq, pwmResolution)) {
+    Serial.println("Failed to attach PWM to pin");
+    while (true) {
+      delay(1000);
+    }
   }
 
+  setPWMDutyPercent(0);
+
+  Serial.println("ESP32-S3 PWM controller ready");
+  Serial.println("Type a number from 0 to 100, then press Enter");
+}
+
+void loop()
+{
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+
+    if (c == '\n' || c == '\r') {
+      if (inputBuffer.length() > 0) {
+        float value = inputBuffer.toFloat();
+
+        // Reject non-numeric garbage like "abc"
+        bool looksNumeric = false;
+        for (size_t i = 0; i < inputBuffer.length(); i++) {
+          char ch = inputBuffer[i];
+          if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+') {
+            looksNumeric = true;
+            break;
+          }
+        }
+
+        if (looksNumeric && value >= 0.0 && value <= 100.0) {
+          setPWMDutyPercent(100-value);
+        } else {
+          Serial.println("Invalid input. Enter a number from 0 to 100.");
+        }
+
+        inputBuffer = "";
+      }
+    } else {
+      inputBuffer += c;
+    }
+  }
 }
