@@ -42,31 +42,27 @@ bool SLF3S4000B::stop() {
   return true;
 }
 
-bool SLF3S4000B::read(float &flow_ml_min, float &temp_C, uint16_t &flags, float &byte1, float &byte2, float &CRC) {
+bool SLF3S4000B::read(float &flow_ml_min, float &temp_C, uint16_t &flags) {
   const uint8_t NumberBytes = 9;
   uint8_t buf[NumberBytes];
 
   readMultiByteRegN(buf, NumberBytes);
 
-  // if (crc8(&buf[0], 2) != buf[2]) return false;
-  // if (crc8(&buf[3], 2) != buf[5]) return false;
-  // if (crc8(&buf[6], 2) != buf[8]) return false;
+  if (crc8(&buf[0], 2) != buf[2]); // return false;
+  if (crc8(&buf[3], 2) != buf[5]); // return false;
+  if (crc8(&buf[6], 2) != buf[8]); // return false;
 
-  if(!decodeData(buf, flow_ml_min, temp_C, flags, byte1, byte2, CRC)) return false;
+  if(!decodeData(buf, flow_ml_min, temp_C, flags)) return false;
 
   return true;
 }
 
-bool SLF3S4000B::decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags, float &byte1, float &byte2, float &CRC) 
+bool SLF3S4000B::decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags) 
 {
     // Extract signed 16-bit values from big-endian format
     int16_t raw_flow = (int16_t)((buf[0] << 8) | buf[1]);
     int16_t raw_temp = (int16_t)((buf[3] << 8) | buf[4]);
     flags            = (uint16_t)((buf[6] << 8) | buf[7]);
-
-    byte1 = buf[0];
-    byte2 = buf[1];
-    CRC = buf[2];
 
     // Sensirion SLF3S-4000B scaling
     flow_ml_min = raw_flow / 32.0f;
@@ -133,4 +129,87 @@ bool SLF3S4000B::getAverageFlow(float &out) {
   out = lastAvgFlow;
 
   return true;
+}
+
+
+bool SLF3S4000B::getCorrectedFlowRate_mlpm(float &out) {
+
+  float lpm = 0.0f;
+
+  if (!getCorrectedFlowRate_lpm(lpm)) {
+    return false;
+  }
+
+  correctedFlowRate_mlpm = lpm * 1000;
+
+  out = correctedFlowRate_mlpm;
+
+  return true;
+}
+
+// Final corrected flow rate in L/min
+bool SLF3S4000B::getCorrectedFlowRate_lpm(float &out) {
+  float flow_lpm;
+
+  // Get filtered flow in L/min
+  if (!getFilteredFlow_lpm(flow_lpm)) {
+    return false;
+  }
+
+  // Compute error rate e(f) for this flow
+  float e = computeErrorRateLpm(flow_lpm);
+
+  // f_real = f_measured / (1 - e)
+  float denom = 1.0f - e;
+  if (fabs(denom) < 1e-6f) {
+    // Avoid divide-by-zero
+    return false;
+  }
+
+  correctedFlowRate_lpm = flow_lpm / denom;
+  out = correctedFlowRate_lpm;
+
+  return true;
+}
+
+// Convert filtered flow mL/min -> L/min
+bool SLF3S4000B::getFilteredFlow_lpm(float &out) {
+  float flow_ml_min;
+
+  // Use existing filtered flow function (mL/min)
+  if (!getFilteredFlow(flow_ml_min)) {
+    return false;
+  }
+
+  filteredFlow_lpm = flow_ml_min / 1000.0f;  // mL/min -> L/min
+  out = filteredFlow_lpm;
+
+  return true;
+}
+
+// Piecewise error function e(f) in L/min
+float SLF3S4000B::computeErrorRateLpm(float flow_lpm) const {
+  float e = 0.0f;
+
+  if (flow_lpm < 0.25f) {
+    e = 0.0f;
+  }
+  else if (flow_lpm < 0.50f) {
+    e = 0.5f * flow_lpm - 0.125f;
+  }
+  else if (flow_lpm < 0.75f) {
+    e = -0.15f * flow_lpm + 0.20f;
+  }
+  else if (flow_lpm < 0.85f) {
+    e = -0.083f * flow_lpm + 0.15f;
+  }
+  else if (flow_lpm < 0.95f) {
+    e = 0.5f * flow_lpm - 0.346f;
+  }
+  else {
+    // Outside calibrated range: no correction
+    e = 0.0f;
+  }
+
+  return e;
 }

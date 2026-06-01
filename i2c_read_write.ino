@@ -3,12 +3,8 @@
 
 #include "I2CDevices.h"
 
-#include "TempSensor_MCP9808/MCP9808.h"
-#include "TempSensor_MCP9808/MCP9808.cpp"
 #include "FlowSensor_SLFS4000B/SLFS4000B.h"
 #include "FlowSensor_SLFS4000B/SLFS4000B.cpp"
-#include "DAC/DAC.h"
-#include "DAC/DAC.cpp"
 
 // ------------ Config ------------
 
@@ -16,44 +12,21 @@
 #define SDA_PIN 3
 #define SCL_PIN 2
 
+const uint32_t I2C_FREQ = 400000;
+
+// I2C address
+#define SLF3S4000B_ADDR 0x08
+
 bool PRINT_DATA = true;
 bool PLOT_MODE  = false;
 
-const uint32_t I2C_FREQ = 400000;
+// ------------ Device ------------
 
-// I2C addresses
-#define MCP9808_A_ADDR        0x18
-#define MCP9808_B_ADDR        0x1D
-#define SLF3S4000B_ADDR       0x08
+SLF3S4000B flowSensor(SLF3S4000B_ADDR);
 
-// DAC
-#define DAC_ADDR 0x0F
-static const float   DAC_VREF_VOLTS = 3.28f;
-static const uint8_t DAC_RES_BITS   = 16;
-static const uint8_t DAC_DEFAULT_CH = 0;
+// ------------ Live flag ------------
 
-// ------------ Devices ------------
-
-MCP9808     mcpA(MCP9808_A_ADDR);
-MCP9808     mcpB(MCP9808_B_ADDR);
-SLF3S4000B  flowSensor(SLF3S4000B_ADDR);
-DAC         dac(DAC_ADDR);
-
-// ------------ Live flags (only print if true) ------------
-bool LIVE_MCP_A = false;
-bool LIVE_MCP_B = false;
-bool LIVE_FLOW  = false;
-bool LIVE_DAC   = false;
-
-// ------------ Serial input handling ------------
-String inputLine;
-
-void printHelp() {
-  Serial.println("Serial commands:");
-  Serial.println("  ENTER on empty line -> toggle TEXT/PLOT");
-  Serial.println("  Type voltage then ENTER (e.g. 1.250) -> set DAC output");
-  Serial.println();
-}
+bool LIVE_FLOW = false;
 
 // ------------ Setup ------------
 
@@ -64,199 +37,139 @@ void setup() {
   Wire.begin(SDA_PIN, SCL_PIN);
   Wire.setClock(I2C_FREQ);
 
-  // --- DAC ---
-  // dac.begin(DAC_VREF_VOLTS, DAC_RES_BITS, DAC_DEFAULT_CH);
-  // LIVE_DAC = true;                // if you want true detection, we can add an I2C ping
-  // dac.setVoltage(0.0f);
+  Serial.println("Starting SLF3S-4000B flow sensor test...");
 
-  // --- MCP9808 A ---
-  // LIVE_MCP_A = mcpA.begin(0x03);
-  // if (LIVE_MCP_A) {
-  //   Serial.println("MCP9808 'A' started");
-  //   mcpA.setLimits(0.0f, 60.0f, 80.0f);
-  // } else {
-  //   Serial.println("MCP9808 'A' startup FAILED");
-  // }
-
-  // // --- MCP9808 B ---
-  // LIVE_MCP_B = mcpB.begin(0x03);
-  // if (LIVE_MCP_B) {
-  //   Serial.println("MCP9808 'B' started");
-  //   mcpB.setLimits(0.0f, 60.0f, 80.0f);
-  // } else {
-  //   Serial.println("MCP9808 'B' startup FAILED");
-  // }
-
-  // --- SLF3S-4000B flow sensor ---
   LIVE_FLOW = flowSensor.startWater();
+
   if (LIVE_FLOW) {
-    Serial.println("SLF3S-4000B started (water mode)");
-    delay(50);
+    Serial.println("SLF3S-4000B started successfully in water mode.");
   } else {
-    Serial.println("SLF3S-4000B startup FAILED");
+    Serial.println("SLF3S-4000B startup FAILED.");
   }
 
   Serial.println("Setup complete.");
   delay(1000);
-  //printHelp();
 }
 
 // ------------ Loop ------------
 
 void loop() {
-  // Run all I2C commands once
-  static bool ranOnce = false;
-  if (ranOnce) {
-    // Stop forever after the first pass
-    Serial.println("Loop already ran once. Halting.");
-    while (true) {
-      delay(1000);
-    }
-  }
-  ranOnce = true;
-
   static uint8_t slf_fail_count = 0;
 
-  float tA = NAN, tB = NAN;
-  float tA_filtered = NAN, tA_av = NAN;
+  // If startup failed, keep retrying
+  if (!LIVE_FLOW) {
+    Serial.println("Flow sensor not live. Retrying startWater()...");
+    LIVE_FLOW = flowSensor.startWater();
+    delay(1000);
+    return;
+  }
 
-  float flow = NAN, flowT = NAN, byte1 = NAN, byte2 = NAN, CRC = NAN;
-  float flow_filtered = NAN, flow_av = NAN;
+  float flow_ml_min = NAN;
+  float temp_C = NAN;
   uint16_t flowFlags = 0;
 
+  float flow_filtered_ml_min = NAN;
+  float flow_average_ml_min = NAN;
+  float flow_filtered_lpm = NAN;
+  float flow_corrected_lpm = NAN;
+  float flow_corrected_ml_min = NAN;
 
-  // --------- Serial input: line-based ----------
-  // while (Serial.available() > 0) {
-  //   char c = (char)Serial.read();
-  //   if (c == '\r') continue;
+  bool okFlow = flowSensor.read(flow_ml_min, temp_C, flowFlags);
 
-  //   if (c == '\n') {
-  //     String line = inputLine;
-  //     inputLine = "";
-  //     line.trim();
+  bool okFlowFilt = flowSensor.getFilteredFlow(flow_filtered_ml_min);
+  bool okFlowAvg  = flowSensor.getAverageFlow(flow_average_ml_min);
+  bool okFlowLpm  = flowSensor.getFilteredFlow_lpm(flow_filtered_lpm);
+  bool okCorrLpm  = flowSensor.getCorrectedFlowRate_lpm(flow_corrected_lpm);
+  bool okCorrMlpm = flowSensor.getCorrectedFlowRate_mlpm(flow_corrected_ml_min);
 
-  //     if (line.length() == 0) {
-  //       PLOT_MODE = !PLOT_MODE;
-  //       Serial.print("Mode: ");
-  //       Serial.println(PLOT_MODE ? "PLOT" : "TEXT");
-  //     } else {
-  //       float v = line.toFloat();
-  //       if (LIVE_DAC) {
-  //         bool ok = dac.setVoltage(v);
-  //         if (!ok) Serial.println("DAC setVoltage() failed (I2C?)");
-  //         else {
-  //           Serial.print("DAC set to ");
-  //           Serial.print(v, 4);
-  //           Serial.println(" V");
-  //         }
-  //       } else {
-  //         Serial.println("DAC not marked LIVE");
-  //       }
-  //     }
-  //   } else {
-  //     inputLine += c;
-  //     if (inputLine.length() > 40) inputLine.remove(0, inputLine.length() - 40);
-  //   }
-  // }
+  // Failure handling
+  if (!okFlow) {
+    slf_fail_count++;
 
-  // ----- Reads (only if live) -----
-  bool okA=false, okA_filt=false, okA_av=false;
-  if (LIVE_MCP_A) {
-    okA      = mcpA.readTemperature(tA);
-    okA_filt = mcpA.getFilteredTemp(tA_filtered);
-    okA_av   = mcpA.getAverageTemp(tA_av);
-  }
+    Serial.print("Flow read failed. Fail count: ");
+    Serial.println(slf_fail_count);
 
-  bool okB=false;
-  if (LIVE_MCP_B) {
-    okB = mcpB.readTemperature(tB);
-  }
+    if (slf_fail_count >= 3) {
+      Serial.println("Flow sensor failed 3 times. Resetting sensor...");
 
-  bool okFlow=false, okFlow_filt=false, okFlow_av=false;
-  if (LIVE_FLOW) {
-    okFlow      = flowSensor.read(flow, flowT, flowFlags, byte1, byte2, CRC);
-    okFlow_filt = flowSensor.getFilteredFlow(flow_filtered);
-    okFlow_av   = flowSensor.getAverageFlow(flow_av);
+      flowSensor.resetSensor();
+      delay(100);
 
-    if (!okFlow) {
-      slf_fail_count++;
-      if (slf_fail_count >= 3) {
-        flowSensor.resetSensor();
-        slf_fail_count = 0;
-        // optional: LIVE_FLOW = false;  // hide it if it keeps failing
-      }
-    } else {
-      slf_fail_count = 0;
-    }
-  }
-
-  // ---------- OUTPUT BLOCK ----------
-  if (!PLOT_MODE) {
-    if (PRINT_DATA) {
-      bool printedAnything = false;
-
-      if (LIVE_MCP_A) {
-        Serial.print("A: ");
-        if (okA) {
-          Serial.print(tA, 4); Serial.print(" °C");
-          if (okA_filt) { Serial.print("  F:");  Serial.print(tA_filtered, 4); }
-          if (okA_av)   { Serial.print("  Av:"); Serial.print(tA_av, 4); }
-        } else {
-          Serial.print("read fail");
-        }
-        Serial.print("   ");
-        printedAnything = true;
-      }
-
-      if (LIVE_MCP_B) {
-        Serial.print("B: ");
-        if (okB) { Serial.print(tB, 4); Serial.print(" °C"); }
-        else     { Serial.print("read fail"); }
-        Serial.print("   ");
-        printedAnything = true;
-      }
+      LIVE_FLOW = flowSensor.startWater();
 
       if (LIVE_FLOW) {
-        Serial.print("Flow: ");
-        if (okFlow) {
-          Serial.print(flow, 4);
-          if (okFlow_filt) { Serial.print("  F:");  Serial.print(flow_filtered, 4); }
-          if (okFlow_av)   { Serial.print("  Av:"); Serial.print(flow_av, 4); }
-          Serial.print(" ml/min  T:");
-          Serial.print(flowT, 4);
-          Serial.print(" Flags:");
-          SLF3S4000B::printFlags(Serial, flowFlags);
-          Serial.print("  B1: "); Serial.print(byte1, HEX); Serial.print("  B2: "); Serial.print(byte2, HEX); Serial.print("  CRC: "); Serial.print(CRC, HEX);
-        } else {
-          Serial.print("read fail");
-        }
-        Serial.print("   ");
-        printedAnything = true;
+        Serial.println("Flow sensor restarted successfully.");
+      } else {
+        Serial.println("Flow sensor restart failed.");
       }
 
-      if (printedAnything) Serial.println();
+      slf_fail_count = 0;
     }
   } else {
-    // Plot mode: only print live channels to keep plotter clean
-    bool first = true;
+    slf_fail_count = 0;
+  }
 
-    if (LIVE_MCP_A) {
-      Serial.print("tA:"); Serial.print(okA ? tA : 0.0f, 4);
-      first = false;
-    }
+  // ---------- Output ----------
+  if (!PLOT_MODE) {
+    if (PRINT_DATA) {
+      Serial.print("Flow: ");
 
-    if (LIVE_MCP_B) {
-      if (!first) Serial.print(" ");
-      Serial.print("tB:"); Serial.print(okB ? tB : 0.0f, 4);
-      first = false;
-    }
+      if (okFlow) {
+        Serial.print(flow_ml_min, 4);
+        Serial.print(" ml/min");
 
-    if (LIVE_FLOW) {
-      if (!first) Serial.print(" ");
-      Serial.print("Flow:");  Serial.print(okFlow ? flow : 0.0f, 4);
-      Serial.print(" FlowT:");Serial.print(okFlow ? flowT : 0.0f, 4);
-      first = false;
+        Serial.print("  Temp: ");
+        Serial.print(temp_C, 4);
+        Serial.print(" C");
+
+        if (okFlowFilt) {
+          Serial.print("  Filtered: ");
+          Serial.print(flow_filtered_ml_min, 4);
+          Serial.print(" ml/min");
+        }
+
+        if (okFlowAvg) {
+          Serial.print("  Average: ");
+          Serial.print(flow_average_ml_min, 4);
+          Serial.print(" ml/min");
+        }
+
+        if (okFlowLpm) {
+          Serial.print("  Filtered L/min: ");
+          Serial.print(flow_filtered_lpm, 6);
+        }
+
+        if (okCorrLpm) {
+          Serial.print("  Corrected L/min: ");
+          Serial.print(flow_corrected_lpm, 6);
+        }
+
+        if (okCorrMlpm) {
+          Serial.print("  Corrected ml/min: ");
+          Serial.print(flow_corrected_ml_min, 4);
+        }
+
+        Serial.print("  Flags: ");
+        SLF3S4000B::printFlags(Serial, flowFlags);
+      } else {
+        Serial.print("read fail");
+      }
+
+      Serial.println();
     }
+  } else {
+    // Arduino Serial Plotter-friendly output
+    Serial.print("Flow_ml_min:");
+    Serial.print(okFlow ? flow_ml_min : 0.0f, 4);
+
+    Serial.print(" Temp_C:");
+    Serial.print(okFlow ? temp_C : 0.0f, 4);
+
+    Serial.print(" Filtered_ml_min:");
+    Serial.print(okFlowFilt ? flow_filtered_ml_min : 0.0f, 4);
+
+    Serial.print(" Corrected_ml_min:");
+    Serial.print(okCorrMlpm ? flow_corrected_ml_min : 0.0f, 4);
 
     Serial.println();
   }
