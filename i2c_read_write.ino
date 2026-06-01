@@ -1,49 +1,37 @@
 #include <Arduino.h>
-#include <math.h>
 
-// -------------------- PWM Config --------------------
+// -------------------- Solenoid Pins --------------------
 
-#define PWM_PIN 18
-
-const uint32_t PWM_FREQ = 20000;     // 20 kHz
-const uint8_t  PWM_RES_BITS = 8;     // 8-bit => duty 0..255
-
-uint32_t maxDuty = 0;
-
-// Set true if your driver is inverted:
-// 0% command -> full on
-// 100% command -> full off
-bool PWM_INVERT = true;
+#define SOLENOID_1_PIN 14
+#define SOLENOID_2_PIN 15
 
 String inputLine;
 
-// -------------------- PWM Helper --------------------
+// -------------------- Helpers --------------------
 
-void setPWMDutyPercent(float percent)
+void setSolenoid(uint8_t pin, bool state)
 {
-  percent = constrain(percent, 0.0f, 100.0f);
+  digitalWrite(pin, state ? HIGH : LOW);
 
-  float appliedPercent = percent;
+  Serial.print("Pin ");
+  Serial.print(pin);
+  Serial.print(" set ");
+  Serial.println(state ? "HIGH" : "LOW");
+}
 
-  if (PWM_INVERT) {
-    appliedPercent = 100.0f - percent;
-  }
-
-  uint32_t duty = (uint32_t)lroundf((appliedPercent / 100.0f) * maxDuty);
-
-  if (!ledcWrite(PWM_PIN, duty)) {
-    Serial.println("Failed to update PWM duty");
-    return;
-  }
-
-  Serial.print("Commanded PWM: ");
-  Serial.print(percent, 2);
-  Serial.print("% | Applied PWM: ");
-  Serial.print(appliedPercent, 2);
-  Serial.print("% | Duty: ");
-  Serial.print(duty);
-  Serial.print("/");
-  Serial.println(maxDuty);
+void printHelp()
+{
+  Serial.println();
+  Serial.println("Commands:");
+  Serial.println("  s1 on       pin 14 HIGH");
+  Serial.println("  s1 off      pin 14 LOW");
+  Serial.println("  s2 on       pin 15 HIGH");
+  Serial.println("  s2 off      pin 15 LOW");
+  Serial.println("  both on     pins 14 and 15 HIGH");
+  Serial.println("  both off    pins 14 and 15 LOW");
+  Serial.println("  status      print current pin states");
+  Serial.println("  help        show commands");
+  Serial.println();
 }
 
 // -------------------- Serial Handling --------------------
@@ -52,56 +40,43 @@ void handleLine(const String& lineIn)
 {
   String line = lineIn;
   line.trim();
+  line.toLowerCase();
 
   if (line.length() == 0) return;
 
-  if (line.equalsIgnoreCase("help")) {
-    Serial.println("Commands:");
-    Serial.println("  pwm <0..100>    set PWM percentage");
-    Serial.println("  invert on       enable PWM inversion");
-    Serial.println("  invert off      disable PWM inversion");
-    Serial.println("  help            show commands");
-    return;
+  if (line == "s1 on") {
+    setSolenoid(SOLENOID_1_PIN, true);
   }
-
-  if (line.equalsIgnoreCase("invert on")) {
-    PWM_INVERT = true;
-    Serial.println("PWM inversion enabled");
-    return;
+  else if (line == "s1 off") {
+    setSolenoid(SOLENOID_1_PIN, false);
   }
-
-  if (line.equalsIgnoreCase("invert off")) {
-    PWM_INVERT = false;
-    Serial.println("PWM inversion disabled");
-    return;
+  else if (line == "s2 on") {
+    setSolenoid(SOLENOID_2_PIN, true);
   }
-
-  if (line.startsWith("pwm ") || line.startsWith("PWM ")) {
-    String valueStr = line.substring(4);
-    valueStr.trim();
-
-    float pwm = valueStr.toFloat();
-
-    bool looksNumeric = false;
-    for (size_t i = 0; i < valueStr.length(); i++) {
-      char ch = valueStr[i];
-
-      if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '+') {
-        looksNumeric = true;
-        break;
-      }
-    }
-
-    if (looksNumeric && pwm >= 0.0f && pwm <= 100.0f) {
-      setPWMDutyPercent(pwm);
-    } else {
-      Serial.println("Invalid PWM value. Use: pwm <0 to 100>");
-    }
-
-    return;
+  else if (line == "s2 off") {
+    setSolenoid(SOLENOID_2_PIN, false);
   }
+  else if (line == "both on") {
+    setSolenoid(SOLENOID_1_PIN, true);
+    setSolenoid(SOLENOID_2_PIN, true);
+  }
+  else if (line == "both off") {
+    setSolenoid(SOLENOID_1_PIN, false);
+    setSolenoid(SOLENOID_2_PIN, false);
+  }
+  else if (line == "status") {
+    Serial.print("Pin 14: ");
+    Serial.println(digitalRead(SOLENOID_1_PIN) ? "HIGH" : "LOW");
 
-  Serial.println("Unknown command. Type: help");
+    Serial.print("Pin 15: ");
+    Serial.println(digitalRead(SOLENOID_2_PIN) ? "HIGH" : "LOW");
+  }
+  else if (line == "help") {
+    printHelp();
+  }
+  else {
+    Serial.println("Unknown command. Type: help");
+  }
 }
 
 void checkSerial()
@@ -133,28 +108,17 @@ void setup()
   Serial.begin(115200);
   delay(500);
 
-  maxDuty = (1UL << PWM_RES_BITS) - 1;
+  pinMode(SOLENOID_1_PIN, OUTPUT);
+  pinMode(SOLENOID_2_PIN, OUTPUT);
+
+  digitalWrite(SOLENOID_1_PIN, LOW);
+  digitalWrite(SOLENOID_2_PIN, LOW);
 
   Serial.println();
-  Serial.println("Pure PWM Test");
+  Serial.println("Solenoid GPIO Test");
   Serial.println("--------------------");
-
-  if (ledcAttach(PWM_PIN, PWM_FREQ, PWM_RES_BITS)) {
-    Serial.println("PWM attached OK");
-    setPWMDutyPercent(0.0f);
-  } else {
-    Serial.println("PWM attach failed");
-  }
-
-  Serial.println();
-  Serial.println("Commands:");
-  Serial.println("  pwm 0");
-  Serial.println("  pwm 25");
-  Serial.println("  pwm 50");
-  Serial.println("  pwm 75");
-  Serial.println("  pwm 100");
-  Serial.println("  invert on");
-  Serial.println("  invert off");
+  Serial.println("Pins initialised LOW");
+  printHelp();
 }
 
 // -------------------- Loop --------------------
