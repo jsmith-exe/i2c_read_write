@@ -21,8 +21,8 @@ bool PWM_INVERT = true;
 bool MIN_WATER_STATE = false;
 bool MAX_WATER_STATE = false;
 bool OVERFLOW_WATER_STATE = false;
-uint8_t WATER_STATE = 0;
-uint8_t PREV_WATER_STATE = 0;
+int WATER_STATE = 0;
+int PREV_WATER_STATE = 0;
 bool INITIAL_RUN = true;
 
 String inputLine;
