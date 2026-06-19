@@ -4,6 +4,9 @@
 // -------------------- PWM Config --------------------
 
 #define PWM_PIN 18
+#define MIN_WATER_PIN 8
+#define MAX_WATER_PIN 9
+#define OVERFLOW_WATER_PIN 10
 
 const uint32_t PWM_FREQ = 20000;     // 20 kHz
 const uint8_t  PWM_RES_BITS = 8;     // 8-bit => duty 0..255
@@ -14,6 +17,13 @@ uint32_t maxDuty = 0;
 // 0% command -> full on
 // 100% command -> full off
 bool PWM_INVERT = true;
+
+bool MIN_WATER_STATE = false;
+bool MAX_WATER_STATE = false;
+bool OVERFLOW_WATER_STATE = false;
+uint8_t WATER_STATE = 0;
+uint8_t PREV_WATER_STATE = 0;
+bool INITIAL_RUN = true;
 
 String inputLine;
 
@@ -126,6 +136,50 @@ void checkSerial()
   }
 }
 
+void updateWaterStates()
+{
+  MIN_WATER_STATE = digitalRead(MIN_WATER_PIN);
+  MAX_WATER_STATE = digitalRead(MAX_WATER_PIN);
+  OVERFLOW_WATER_STATE = digitalRead(OVERFLOW_WATER_PIN);
+
+  WATER_STATE = (MIN_WATER_STATE | MAX_WATER_STATE << 1 | OVERFLOW_WATER_STATE << 2) && 7;
+
+}
+
+void printWaterState()
+{
+  Serial.print("Min water: ");
+  Serial.print(MIN_WATER_STATE);
+
+  Serial.print(" | Max water: ");
+  Serial.print(MAX_WATER_STATE);
+
+  Serial.print(" | Overflow: ");
+  Serial.println(OVERFLOW_WATER_STATE);
+}
+
+void waterPrintingLogic()
+{
+  if (INITIAL_RUN)
+  {
+    printWaterState();
+  }
+  if (WATER_STATE != PREV_WATER_STATE)
+  {
+    printWaterState();
+  }
+
+}
+
+void waterDetectProgram()
+{
+  updateWaterStates();
+  waterPrintingLogic();
+
+  // Update prev states
+  PREV_WATER_STATE = WATER_STATE;
+}
+
 // -------------------- Setup --------------------
 
 void setup()
@@ -134,6 +188,9 @@ void setup()
   delay(500);
 
   maxDuty = (1UL << PWM_RES_BITS) - 1;
+
+  pinMode(PWM_PIN, OUTPUT);
+  digitalWrite(PWM_PIN, LOW);
 
   Serial.println();
   Serial.println("Pure PWM Test");
@@ -162,4 +219,6 @@ void setup()
 void loop()
 {
   checkSerial();
+  waterDetectProgram();
+  INITIAL_RUN = false;
 }
