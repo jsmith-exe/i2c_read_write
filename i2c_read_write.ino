@@ -142,9 +142,11 @@ void updateWaterStates()
   MAX_WATER_STATE = !digitalRead(MAX_WATER_PIN);
   OVERFLOW_WATER_STATE = !digitalRead(OVERFLOW_WATER_PIN);
 
+  Serial.print((MAX_WATER_STATE << 1));
+  Serial.print("   ");
+  Serial.println((OVERFLOW_WATER_STATE << 2));
+
   WATER_STATE = ( (MIN_WATER_STATE) | (MAX_WATER_STATE << 1) | (OVERFLOW_WATER_STATE << 2) );
-
-
 }
 
 void printWaterState()
