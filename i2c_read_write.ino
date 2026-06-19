@@ -138,11 +138,12 @@ void checkSerial()
 
 void updateWaterStates()
 {
-  MIN_WATER_STATE = digitalRead(MIN_WATER_PIN);
-  MAX_WATER_STATE = digitalRead(MAX_WATER_PIN);
-  OVERFLOW_WATER_STATE = digitalRead(OVERFLOW_WATER_PIN);
+  MIN_WATER_STATE = !digitalRead(MIN_WATER_PIN);
+  MAX_WATER_STATE = !digitalRead(MAX_WATER_PIN);
+  OVERFLOW_WATER_STATE = !digitalRead(OVERFLOW_WATER_PIN);
 
-  WATER_STATE = (MIN_WATER_STATE | MAX_WATER_STATE << 1 | OVERFLOW_WATER_STATE << 2) && 7;
+  WATER_STATE = ( (MIN_WATER_STATE) | (MAX_WATER_STATE << 1) | (OVERFLOW_WATER_STATE << 2) );
+
 
 }
 
@@ -164,7 +165,8 @@ void waterPrintingLogic()
   {
     printWaterState();
   }
-  if (WATER_STATE != PREV_WATER_STATE)
+
+  else if (WATER_STATE != PREV_WATER_STATE)
   {
     printWaterState();
   }
@@ -178,6 +180,7 @@ void waterDetectProgram()
 
   // Update prev states
   PREV_WATER_STATE = WATER_STATE;
+
 }
 
 // -------------------- Setup --------------------
