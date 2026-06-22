@@ -1,12 +1,10 @@
 #include <Arduino.h>
+#include <Water_Level_Detection/Water_Level_Detection.h>
 #include <math.h>
 
 // -------------------- PWM Config --------------------
 
 #define PWM_PIN 18
-#define MIN_WATER_PIN 8
-#define MAX_WATER_PIN 9
-#define OVERFLOW_WATER_PIN 10
 #define SOL_TANK_PIN 14
 #define SOL_UNIT_PIN 15
 
@@ -20,12 +18,7 @@ uint32_t maxDuty = 0;
 // 100% command -> full off
 bool PWM_INVERT = true;
 
-bool MIN_WATER_STATE = false;
-bool MAX_WATER_STATE = false;
-bool OVERFLOW_WATER_STATE = false;
-uint8_t WATER_STATE = 0;
-uint8_t PREV_WATER_STATE = 0;
-bool INITIAL_RUN = true;
+TANK tank;
 
 String inputLine;
 
@@ -138,54 +131,6 @@ void checkSerial()
   }
 }
 
-void updateWaterStates()
-{
-  // Update prev states
-  PREV_WATER_STATE = WATER_STATE;
-
-  MIN_WATER_STATE = !digitalRead(MIN_WATER_PIN);
-  MAX_WATER_STATE = !digitalRead(MAX_WATER_PIN);
-  OVERFLOW_WATER_STATE = !digitalRead(OVERFLOW_WATER_PIN);
-
-
-  WATER_STATE = ( (MIN_WATER_STATE) | (MAX_WATER_STATE << 1) | (OVERFLOW_WATER_STATE << 2) );
-}
-
-void printWaterState()
-{
-  if (OVERFLOW_WATER_STATE)
-  {
-    Serial.println("Water at OVERFLOW level");
-  }
-  else if (MAX_WATER_STATE)
-  {
-    Serial.println("Water at MAX level");
-  }
-  else if (MIN_WATER_STATE)
-  {
-    Serial.println("Water at MIN level");
-  }
-}
-
-void waterPrintingLogic()
-{
-  if (INITIAL_RUN)
-  {
-    printWaterState();
-  }
-
-  else if (WATER_STATE != PREV_WATER_STATE)
-  {
-    printWaterState();
-  }
-
-}
-
-void waterDetectProgram()
-{
-  updateWaterStates();
-  waterPrintingLogic();
-}
 
 
 
@@ -201,9 +146,8 @@ void setup()
   pinMode(PWM_PIN, OUTPUT);
   digitalWrite(PWM_PIN, LOW);
 
-  pinMode(MIN_WATER_PIN, INPUT);
-  pinMode(MAX_WATER_PIN, INPUT);
-  pinMode(OVERFLOW_WATER_PIN, INPUT);
+  tank.begin();
+
   pinMode(SOL_TANK_PIN, OUTPUT);
   pinMode(SOL_UNIT_PIN, OUTPUT);
 
@@ -238,19 +182,19 @@ void loop()
 {
 
   checkSerial();
-  waterDetectProgram();
+  tank.waterDetectProgram();
 
-  if (OVERFLOW_WATER_STATE)
+  if (tank.OVERFLOW_WATER_STATE)
   {
     setPWMDutyPercent(0.0f);
     digitalWrite(SOL_TANK_PIN, LOW);
 
   }
-  else if (!WATER_STATE)
+  else if (tank.WATER_STATE > 0)
   {
     digitalWrite(SOL_TANK_PIN, HIGH);
     setPWMDutyPercent(100);
   }
 
-  INITIAL_RUN = false;
+  delay(500);
 }
