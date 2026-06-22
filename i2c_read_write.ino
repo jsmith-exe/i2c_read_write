@@ -8,6 +8,7 @@
 #define MAX_WATER_PIN 9
 #define OVERFLOW_WATER_PIN 10
 #define SOL_TANK_PIN 14
+#define SOL_UNIT_PIN 15
 
 const uint32_t PWM_FREQ = 20000;     // 20 kHz
 const uint8_t  PWM_RES_BITS = 8;     // 8-bit => duty 0..255
@@ -186,6 +187,8 @@ void waterDetectProgram()
   waterPrintingLogic();
 }
 
+
+
 // -------------------- Setup --------------------
 
 void setup()
@@ -202,6 +205,9 @@ void setup()
   pinMode(MAX_WATER_PIN, INPUT);
   pinMode(OVERFLOW_WATER_PIN, INPUT);
   pinMode(SOL_TANK_PIN, OUTPUT);
+  pinMode(SOL_UNIT_PIN, OUTPUT);
+
+  digitalWrite(SOL_UNIT_PIN, LOW);
 
   Serial.println();
   Serial.println("Pure PWM Test");
@@ -223,12 +229,14 @@ void setup()
   Serial.println("  pwm 100");
   Serial.println("  invert on");
   Serial.println("  invert off");
+
 }
 
 // -------------------- Loop --------------------
 
 void loop()
 {
+
   checkSerial();
   waterDetectProgram();
 
@@ -243,5 +251,6 @@ void loop()
     digitalWrite(SOL_TANK_PIN, HIGH);
     setPWMDutyPercent(100);
   }
+
   INITIAL_RUN = false;
 }
