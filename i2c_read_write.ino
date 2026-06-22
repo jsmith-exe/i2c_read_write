@@ -139,6 +139,9 @@ void checkSerial()
 
 void updateWaterStates()
 {
+  // Update prev states
+  PREV_WATER_STATE = WATER_STATE;
+
   MIN_WATER_STATE = !digitalRead(MIN_WATER_PIN);
   MAX_WATER_STATE = !digitalRead(MAX_WATER_PIN);
   OVERFLOW_WATER_STATE = !digitalRead(OVERFLOW_WATER_PIN);
@@ -181,10 +184,6 @@ void waterDetectProgram()
 {
   updateWaterStates();
   waterPrintingLogic();
-
-  // Update prev states
-  PREV_WATER_STATE = WATER_STATE;
-
 }
 
 // -------------------- Setup --------------------
