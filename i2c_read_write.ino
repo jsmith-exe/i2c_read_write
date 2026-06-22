@@ -7,7 +7,7 @@
 #define MIN_WATER_PIN 8
 #define MAX_WATER_PIN 9
 #define OVERFLOW_WATER_PIN 10
-#define RELEASE_PIN 14
+#define SOL_TANK_PIN 14
 
 const uint32_t PWM_FREQ = 20000;     // 20 kHz
 const uint8_t  PWM_RES_BITS = 8;     // 8-bit => duty 0..255
@@ -149,14 +149,18 @@ void updateWaterStates()
 
 void printWaterState()
 {
-  Serial.print("Min water: ");
-  Serial.print(MIN_WATER_STATE);
-
-  Serial.print(" | Max water: ");
-  Serial.print(MAX_WATER_STATE);
-
-  Serial.print(" | Overflow: ");
-  Serial.println(OVERFLOW_WATER_STATE);
+  if (OVERFLOW_WATER_STATE)
+  {
+    Serial.println("Water at OVERFLOW level");
+  }
+  else if (MAX_WATER_STATE)
+  {
+    Serial.println("Water at MAX level");
+  }
+  else if (MIN_WATER_STATE)
+  {
+    Serial.println("Water at MIN level");
+  }
 }
 
 void waterPrintingLogic()
@@ -198,7 +202,7 @@ void setup()
   pinMode(MIN_WATER_PIN, INPUT);
   pinMode(MAX_WATER_PIN, INPUT);
   pinMode(OVERFLOW_WATER_PIN, INPUT);
-  pinMode(RELEASE_PIN, OUTPUT);
+  pinMode(SOL_TANK_PIN, OUTPUT);
 
   Serial.println();
   Serial.println("Pure PWM Test");
@@ -232,12 +236,12 @@ void loop()
   if (OVERFLOW_WATER_STATE)
   {
     setPWMDutyPercent(0.0f);
-    digitalWrite(RELEASE_PIN, LOW);
+    digitalWrite(SOL_TANK_PIN, LOW);
 
   }
-  else if (!(WATER_STATE | 0))
+  else if (!WATER_STATE)
   {
-    digitalWrite(RELEASE_PIN, HIGH);
+    digitalWrite(SOL_TANK_PIN, HIGH);
     setPWMDutyPercent(100);
   }
   INITIAL_RUN = false;
