@@ -8,7 +8,7 @@ public:
     TANK();
     void begin();
     void updateWaterStates();
-    void printWaterStates();
+    void printWaterState();
     void waterPrintingLogic();
     void waterDetectProgram();
 

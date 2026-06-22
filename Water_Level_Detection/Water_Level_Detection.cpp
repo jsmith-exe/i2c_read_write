@@ -14,7 +14,7 @@ TANK::TANK()
 
 void TANK::begin()
 {
-    pinMode(MIN_WATER_PIN, INPUT);
+    pinMode(LOW_WATER_PIN, INPUT);
     pinMode(MAX_WATER_PIN, INPUT);
     pinMode(OVERFLOW_WATER_PIN, INPUT);
 }
