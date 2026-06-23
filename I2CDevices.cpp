@@ -2,12 +2,21 @@
 
 // ===================== I2CDevice base =====================
 
+I2CWire::I2CWire()
+{
+}
+
+void I2CWire::begin()
+{
+  Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setClock(I2C_FREQ);
+}
+
 I2CDevice::I2CDevice(uint8_t address, TwoWire &wire)
   : bus(wire), addr(address) {}
 
 bool I2CDevice::begin() {
-  Wire.begin(SDA_PIN, SCL_PIN);
-  Wire.setClock(I2C_FREQ);
+
   return true;
 }
 
