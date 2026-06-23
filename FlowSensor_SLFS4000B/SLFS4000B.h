@@ -5,7 +5,7 @@
 
 class SLF3S4000B : public I2CDevice {
 public:
-  SLF3S4000B(uint8_t address = 0x08, TwoWire &wire = Wire);
+  SLF3S4000B(uint8_t address = SLF3S4000B_ADDR, TwoWire &wire = Wire);
 
   bool begin();                // nothing special yet, kept for symmetry
   bool startWater();           // start continuous measurement (H2O)
@@ -23,6 +23,8 @@ public:
   static void printFlags(Stream &out, uint16_t f);
 
 private:
+
+  static constexpr uint8_t SLF3S4000B_ADDR = 0x08;
   uint8_t crc8(const uint8_t *data, size_t len) const;
 
   // Stored values

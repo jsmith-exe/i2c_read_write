@@ -6,7 +6,8 @@ I2CDevice::I2CDevice(uint8_t address, TwoWire &wire)
   : bus(wire), addr(address) {}
 
 bool I2CDevice::begin() {
-  // default does nothing, override if needed
+  Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setClock(I2C_FREQ);
   return true;
 }
 

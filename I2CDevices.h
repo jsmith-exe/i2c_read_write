@@ -8,10 +8,14 @@ class I2CDevice {
 public:
   I2CDevice(uint8_t address, TwoWire &wire = Wire);
 
-  virtual bool begin();              // optional override
+  bool begin();        
   uint8_t getAddress() const { return addr; }
 
+
 protected:
+  static constexpr uint8_t SDA_PIN = 3;
+  static constexpr uint8_t SCL_PIN = 2;
+  static constexpr uint32_t I2C_FREQ = 400000;
   bool readRegN(uint8_t reg, uint8_t *buf, size_t n);
   bool readMultiByteRegN(uint8_t *buf, size_t n);
   bool writeRegN(uint8_t reg, const uint8_t *data, size_t n);
