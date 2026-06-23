@@ -20,6 +20,9 @@ public:
 
   bool resetSensor();
 
+  void update();
+  void printFlow();
+
   static void printFlags(Stream &out, uint16_t f);
 
 private:
