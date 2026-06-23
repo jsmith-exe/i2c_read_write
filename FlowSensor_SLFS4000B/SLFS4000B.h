@@ -33,4 +33,11 @@ private:
   float avgAccumFlow = NAN;
   uint8_t avgCountFlow = NAN;
   float lastAvgFlow   = NAN;
+
+  float flow_ml_min;
+  float temp_C ;
+  uint16_t flowFlags = 0;
+  float flow_filtered_ml_min;
+
+  bool liveFlow = false;
 };

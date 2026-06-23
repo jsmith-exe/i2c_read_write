@@ -6,7 +6,13 @@ SLF3S4000B::SLF3S4000B(uint8_t address, TwoWire &wire)
   : I2CDevice(address, wire) {}
 
 bool SLF3S4000B::begin() {
-    return true;
+
+  // Sensirion command: just send the 2-byte command, no register index
+  uint8_t reg = 0x36;
+  uint8_t data = 0x8;
+  if (!writeReg8(reg,data)) return false;
+
+  return true;
 }
 
 // CRC-8 for Sensirion (poly 0x31, init 0xFF)
@@ -129,4 +135,27 @@ bool SLF3S4000B::getAverageFlow(float &out) {
   out = lastAvgFlow;
 
   return true;
+}
+
+void SLF3S4000B::update()
+{
+  if (!liveFlow) {
+    Serial.println("Flow sensor not live. Retrying startWater()...");
+    liveFlow = begin();
+    delay(1000);
+    return;
+  }
+
+  read(flow_ml_min, temp_C, flowFlags);
+  getFilteredFlow(flow_filtered_ml_min);
+}
+
+void SLF3S4000B::printFlow()
+{
+  Serial.print(flow_ml_min, 4);
+  Serial.print(" ml/min");
+
+  Serial.print("  Temp: ");
+  Serial.print(temp_C, 4);
+  Serial.println(" C");
 }
