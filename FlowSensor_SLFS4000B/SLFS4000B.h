@@ -20,10 +20,14 @@ public:
 
   bool resetSensor();
 
-  void update();
+  void updateFlowReading();
   void printFlow();
+  void flowPlot();
 
   static void printFlags(Stream &out, uint16_t f);
+
+  float flow_ml_min;
+  float temp_C ;
 
 private:
 
@@ -36,9 +40,7 @@ private:
   float avgAccumFlow = NAN;
   uint8_t avgCountFlow = NAN;
   float lastAvgFlow   = NAN;
-
-  float flow_ml_min;
-  float temp_C ;
+  
   uint16_t flowFlags = 0;
   float flow_filtered_ml_min;
 
