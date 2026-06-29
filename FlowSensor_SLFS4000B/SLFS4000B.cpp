@@ -119,7 +119,7 @@ bool SLF3S4000B::getAverageFlow(float &out) {
   float newAvg;
 
   // Set sample window
-  const uint16_t sampleWindow = 30;
+  const uint16_t sampleWindow = 10;
   
   if (accumulateAverage(lastFlow, avgAccumFlow, avgCountFlow, sampleWindow, newAvg)) lastAvgFlow = newAvg;
 
@@ -143,6 +143,7 @@ void SLF3S4000B::updateFlowReading()
 
   read(flow_ml_min, temp_C, flowFlags);
   getFilteredFlow(flow_filtered_ml_min);
+  getAverageFlow(flow_av_ml_min);
 }
 
 void SLF3S4000B::printFlow()
@@ -150,7 +151,7 @@ void SLF3S4000B::printFlow()
   Serial.print(flow_ml_min, 4);
   Serial.print(" ml/min    ");
 
-  Serial.print(filteredFlow, 4);
+  Serial.print(flow_filtered_ml_min, 4);
   Serial.print(" ml/min     ");
 
   Serial.print("  Temp: ");
@@ -160,5 +161,9 @@ void SLF3S4000B::printFlow()
 
 void SLF3S4000B::flowPlot()
 {
-  Serial.print("Flow:");  Serial.print(flow_ml_min : 0.0f, 4);
+  float perspective = 600;
+  Serial.print("Flow:");  
+  Serial.print(flow_filtered_ml_min, 4);
+  Serial.print("  perspective:");  
+  Serial.println(perspective, 4);
 }

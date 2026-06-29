@@ -27,7 +27,9 @@ public:
   static void printFlags(Stream &out, uint16_t f);
 
   float flow_ml_min;
+  float flow_filtered_ml_min;
   float temp_C ;
+  float flow_av_ml_min;
 
 private:
 
@@ -36,13 +38,12 @@ private:
 
   // Stored values
   float lastFlow = NAN;
-  float filteredFlow = NAN;
   float avgAccumFlow = NAN;
   uint8_t avgCountFlow = NAN;
   float lastAvgFlow   = NAN;
+  float filteredFlow = NAN;
   
   uint16_t flowFlags = 0;
-  float flow_filtered_ml_min;
 
   bool liveFlow = false;
 };
