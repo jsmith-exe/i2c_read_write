@@ -2,48 +2,76 @@
 
 // ===================== SLF3S-4000B implementation =====================
 
-SLF3S4000B::SLF3S4000B(uint8_t address, TwoWire &wire)
-  : I2CDevice(address, wire) {}
+SLF3S4000B::SLF3S4000B()
+: I2CDevice(SLF3S4000B_ADDR, Wire) 
+{}
 
-bool SLF3S4000B::begin() {
-
-  return true;
+bool SLF3S4000B::begin() 
+{
+  live_flow = startWater();
+  return live_flow;
 }
 
-// CRC-8 for Sensirion (poly 0x31, init 0xFF)
-uint8_t SLF3S4000B::crc8(const uint8_t *data, size_t len) const {
-  uint8_t crc = 0xFF;
-  for (size_t i = 0; i < len; i++) {
-    crc ^= data[i];
-    for (uint8_t b = 0; b < 8; b++) {
-      if (crc & 0x80) {
-        crc = (crc << 1) ^ 0x31;
-      } else {
-        crc <<= 1;
-      }
-    }
-  }
-  return crc;
-}
-
-bool SLF3S4000B::startWater() {
+bool SLF3S4000B::startWater() 
+{
   // Sensirion command: just send the 2-byte command, no register index
   uint8_t reg = 0x36;
   uint8_t data = 0x8;
-  if (!writeReg8(reg,data)) return false;
+  if (!writeReg8(reg, data)) 
+  {
+    live_flow = false;
+    return false;
+  }
 
+  live_flow = true;
   return true;
 }
 
-bool SLF3S4000B::stop() {
+bool SLF3S4000B::stop() 
+{
   uint8_t reg = 0x3F;
   uint8_t data = 0xF9;
-  if (!writeReg8(reg,data)) return false;
+  if (!writeReg8(reg, data))
+  {
+    return false;
+  }
+
+  live_flow = false;
+  return true;
+}
+
+bool SLF3S4000B::update()
+{
+  if (!live_flow)
+  {
+    live_flow = startWater();
+
+    if (!live_flow)
+    {
+      return false;
+    }
+
+    delay(10);
+  }
+
+  float new_flow_ml_min = 0.0f;
+  float new_temp_C = 0.0f;
+  uint16_t new_flags = 0;
+
+  if (!readSample(new_flow_ml_min, new_temp_C, new_flags))
+  {
+    return false;
+  }
+
+  flow_ml_min = new_flow_ml_min;
+  temp_C = new_temp_C;
+  flow_flags = new_flags;
 
   return true;
 }
 
-bool SLF3S4000B::read(float &flow_ml_min, float &temp_C, uint16_t &flags) {
+bool SLF3S4000B::readSample(float &flow_ml_min, float &temp_C, uint16_t &flags) 
+{
   const uint8_t NumberBytes = 9;
   uint8_t buf[NumberBytes];
 
@@ -58,112 +86,63 @@ bool SLF3S4000B::read(float &flow_ml_min, float &temp_C, uint16_t &flags) {
   return true;
 }
 
+// CRC-8 for Sensirion (poly 0x31, init 0xFF)
+uint8_t SLF3S4000B::crc8(const uint8_t *data, size_t len) const 
+{
+  uint8_t crc = 0xFF;
+  for (size_t i = 0; i < len; i++) 
+  {
+    crc ^= data[i];
+    for (uint8_t b = 0; b < 8; b++) 
+    {
+      if (crc & 0x80) 
+      {
+        crc = (crc << 1) ^ 0x31;
+      } else 
+      {
+        crc <<= 1;
+      }
+    }
+  }
+  return crc;
+}
+
 bool SLF3S4000B::decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags) 
 {
-    // Extract signed 16-bit values from big-endian format
-    int16_t raw_flow = (int16_t)((buf[0] << 8) | buf[1]);
-    int16_t raw_temp = (int16_t)((buf[3] << 8) | buf[4]);
-    flags            = (uint16_t)((buf[6] << 8) | buf[7]);
+  int16_t raw_flow = (int16_t)((buf[0] << 8) | buf[1]);
+  int16_t raw_temp = (int16_t)((buf[3] << 8) | buf[4]);
 
-    // Sensirion SLF3S-4000B scaling
-    flow_ml_min = raw_flow / 32.0f;
-    temp_C      = raw_temp / 200.0f;
+  flags = (uint16_t)((buf[6] << 8) | buf[7]);
 
-    lastFlow = flow_ml_min;
-
-    return true;
-}
-
-void SLF3S4000B::printFlags(Stream &out, uint16_t f) {
-  if (f & 0b00000001) out.print("AIR_IN_LINE, ");
-  if (f & 0b00000010) out.print("HIGHFLOW, ");
-  if (f & 0x00010000) out.print("EXP_SMOOTHING, ");
-}
-
-bool SLF3S4000B::resetSensor() {
-  stop();
-  delay(5);
-
-  uint8_t reg = 0x0;
-  uint8_t data = 0x6;
-  if (!writeReg8(reg,data)) return false;
-
-  delay(20);
-  bool ok = startWater();
-  delay(10);
-  return ok;
-}
-
-bool SLF3S4000B::getFilteredFlow(float &out) {
-
-  if (isnan(lastFlow)) {
-    return false;
-  }
-
-  // Set fitler strength
-  const float alpha = 0.075f;
-
-  filteredFlow = lowpass(lastFlow, filteredFlow, alpha);
-
-  out = filteredFlow;
+  flow_ml_min = raw_flow / 32.0f;
+  temp_C = raw_temp / 200.0f;
 
   return true;
 }
 
-bool SLF3S4000B::getAverageFlow(float &out) {
-
-  if (isnan(lastFlow)) {
-    return false;
-  }
-  
-  float newAvg;
-
-  // Set sample window
-  const uint16_t sampleWindow = 10;
-  
-  if (accumulateAverage(lastFlow, avgAccumFlow, avgCountFlow, sampleWindow, newAvg)) lastAvgFlow = newAvg;
-
-  if (isnan(lastAvgFlow)) {
-    return false;
-  }
-
-  out = lastAvgFlow;
-
-  return true;
+float SLF3S4000B::getFlowMlmin() const
+{
+  return flow_ml_min;
 }
 
-void SLF3S4000B::updateFlowReading()
+float SLF3S4000B::getTempC() const
 {
-  if (!liveFlow) {
-    Serial.println("Flow sensor not live. Retrying startWater()...");
-    liveFlow = startWater();
-    delay(1000);
-    return;
-  }
-
-  read(flow_ml_min, temp_C, flowFlags);
-  getFilteredFlow(flow_filtered_ml_min);
-  getAverageFlow(flow_av_ml_min);
+  return temp_C;
 }
 
-void SLF3S4000B::printFlow()
+uint16_t SLF3S4000B::getFlags() const
 {
-  Serial.print(flow_ml_min, 4);
-  Serial.print(" ml/min    ");
-
-  Serial.print(flow_filtered_ml_min, 4);
-  Serial.print(" ml/min     ");
-
-  Serial.print("  Temp: ");
-  Serial.print(temp_C, 4);
-  Serial.println(" C");
+  return flow_flags;
 }
 
-void SLF3S4000B::flowPlot()
+bool SLF3S4000B::isLive() const
 {
-  float perspective = 600;
-  Serial.print("Flow:");  
-  Serial.print(flow_filtered_ml_min, 4);
-  Serial.print("  perspective:");  
-  Serial.println(perspective, 4);
+  return live_flow;
+}
+
+void SLF3S4000B::printFlags(Stream &out, uint16_t flags) 
+{
+  if (flags & 0b00000001) out.print("AIR_IN_LINE, ");
+  if (flags & 0b00000010) out.print("HIGHFLOW, ");
+  if (flags & 0x00010000) out.print("EXP_SMOOTHING, ");
 }

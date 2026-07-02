@@ -3,47 +3,36 @@
 
 // ===================== SLF3S-4000B Flow Sensor =====================
 
-class SLF3S4000B : public I2CDevice {
+class SLF3S4000B : public I2CDevice 
+{
 public:
-  SLF3S4000B(uint8_t address = SLF3S4000B_ADDR, TwoWire &wire = Wire);
+  SLF3S4000B();
+  bool begin();     
 
-  bool begin();                // nothing special yet, kept for symmetry
-  bool startWater();           // start continuous measurement (H2O)
-  bool stop();                 // stop continuous measurement
+  bool startWater();           
+  bool stop();                 
 
-  bool read(float &flow_ml_min, float &temp_C, uint16_t &flags);
-  bool decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags) ;
+  bool update();
 
-  bool getFilteredFlow(float &out);
-  bool getAverageFlow(float &out);
+  float getFlowMlmin() const;
+  float getTempC() const;
+  uint16_t getFlags() const;
+  bool isLive() const;
 
-
-  bool resetSensor();
-
-  void updateFlowReading();
-  void printFlow();
-  void flowPlot();
-
-  static void printFlags(Stream &out, uint16_t f);
-
-  float flow_ml_min;
-  float flow_filtered_ml_min;
-  float temp_C ;
-  float flow_av_ml_min;
+  static void printFlags(Stream &out, uint16_t flags);
 
 private:
 
   static constexpr uint8_t SLF3S4000B_ADDR = 0x08;
+
+  bool readSample(float &flow_ml_min, float &temp_C, uint16_t &flags);
+  bool decodeData(const uint8_t *buf, float &flow_ml_min, float &temp_C, uint16_t &flags);
+
   uint8_t crc8(const uint8_t *data, size_t len) const;
 
-  // Stored values
-  float lastFlow = NAN;
-  float avgAccumFlow = NAN;
-  uint8_t avgCountFlow = NAN;
-  float lastAvgFlow   = NAN;
-  float filteredFlow = NAN;
-  
-  uint16_t flowFlags = 0;
+  float flow_ml_min;
+  float temp_C;
+  uint8_t flow_flags = 0;
 
-  bool liveFlow = false;
+  bool live_flow = false;
 };
